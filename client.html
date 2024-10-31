@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Tic Tac Toe</title>
+    <style>
+        .board {
+            display: grid;
+            grid-template-columns: repeat(3, 100px);
+            gap: 5px;
+            margin: 20px auto;
+            width: 310px;
+        }
+        .cell {
+            height: 100px;
+            background: #eee;
+            border: none;
+            font-size: 2em;
+            cursor: pointer;
+        }
+        .cell:hover {
+            background: #ddd;
+        }
+        .status {
+            text-align: center;
+            margin: 20px;
+            font-size: 1.2em;
+        }
+        .controls {
+            text-align: center;
+            margin: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <button id="createGame">Create New Game</button>
+        <input type="text" id="gameId" placeholder="Game ID">
+        <button id="joinGame">Join Game</button>
+    </div>
+    <div class="status" id="status">Welcome to Tic Tac Toe!</div>
+    <div class="board" id="board">
+        <button class="cell" data-index="0"></button>
+        <button class="cell" data-index="1"></button>
+        <button class="cell" data-index="2"></button>
+        <button class="cell" data-index="3"></button>
+        <button class="cell" data-index="4"></button>
+        <button class="cell" data-index="5"></button>
+        <button class="cell" data-index="6"></button>
+        <button class="cell" data-index="7"></button>
+        <button class="cell" data-index="8"></button>
+    </div>
+
+    <script>
+        let gameID = '';
+        let playerID = 'player-' + Math.random().toString(36).substr(2, 9);
+        let symbol = '';
+        let currentTurn = '';
+
+        const status = document.getElementById('status');
+        const cells = document.querySelectorAll('.cell');
+        
+
+        const API_BASE = 'http://localhost:8080';
+
+        document.getElementById('createGame').addEventListener('click', async () => {
+            try {
+                const response = await fetch(`${API_BASE}/create`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({playerID})
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                gameID = data.gameID;
+                symbol = data.symbol;
+                document.getElementById('gameId').value = gameID;
+                status.textContent = `Game created! Share game ID: ${gameID}. You are ${symbol}`;
+                startPolling();
+            } catch (error) {
+                status.textContent = 'Error creating game: ' + error.message;
+            }
+        });
+
+        document.getElementById('joinGame').addEventListener('click', async () => {
+            gameID = document.getElementById('gameId').value;
+            try {
+                const response = await fetch(`${API_BASE}/join`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({gameID, playerID})
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                symbol = data.symbol;
+                status.textContent = `Joined game! You are ${symbol}`;
+                startPolling();
+            } catch (error) {
+                status.textContent = 'Error joining game: ' + error.message;
+            }
+        });
+
+        cells.forEach(cell => {
+            cell.addEventListener('click', async () => {
+                if (!gameID || cell.textContent || currentTurn !== playerID) return;
+
+                const position = parseInt(cell.dataset.index);
+                try {
+                    const response = await fetch(`${API_BASE}/move`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({gameID, playerID, position})
+                    });
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    const data = await response.json();
+                    updateBoard(data.board);
+                    if (data.winner) {
+                        status.textContent = `Game Over! ${data.winner} wins!`;
+                    }
+                } catch (error) {
+                    status.textContent = 'Error making move: ' + error.message;
+                }
+            });
+        });
+
+        function updateBoard(board) {
+            cells.forEach((cell, index) => {
+                cell.textContent = board[index];
+            });
+        }
+
+        async function pollGameState() {
+            if (!gameID) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/state`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({gameID})
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                updateBoard(data.board);
+                currentTurn = data.currentTurn;
+                
+                if (data.winner) {
+                    status.textContent = `Game Over! ${data.winner} wins!`;
+                } else if (currentTurn === playerID) {
+                    status.textContent = 'Your turn!';
+                } else {
+                    status.textContent = 'Opponent\'s turn';
+                }
+            } catch (error) {
+                console.error('Error polling game state:', error);
+            }
+        }
+
+        function startPolling() {
+            setInterval(pollGameState, 1000);
+        }
+    </script>
+</body>
+</html>
